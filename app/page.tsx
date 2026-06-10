@@ -1,20 +1,27 @@
 "use client";
 
 import mqtt from "mqtt";
-import { useEffect, SubmitEvent, useRef, useState } from "react";
-
+import { SubmitEvent, useEffect, useRef, useState } from "react";
 
 const TOPIC = "forja/desenvolvimento/tarde";
 const CLIENT_ID = `client-${Math.random().toString(16).slice(2)}`;
 
-export default function Home() {
+interface Message {
+  message: string;
+  author: string;
+  date: string;
+}
 
+export default function Home() {
   const clientRef = useRef<mqtt.MqttClient>(null);
+  const messagesRef = useRef<HTMLDivElement>(null)
 
   const [newMessage, setNewMessage] = useState("");
+  const [author, setAuthor] = useState("");
+  const [messages, setMessages] = useState([] as Message[]);
 
   useEffect(() => {
-    if(clientRef.current){
+    if (clientRef.current) {
       return;
     }
 
@@ -22,13 +29,29 @@ export default function Home() {
       clientId: CLIENT_ID,
     });
 
+    clientRef.current = client;
+
     client.on("connect", () => {
-      console.log("Connected to MQTT broken");
+      console.log("Connected to MQTT broker");
       client.subscribe(TOPIC);
     });
 
     client.on("message", (topic, message) => {
-      console.log(topic, JSON.parse(message.toString()));
+      if (topic === TOPIC) {
+        setMessages(oldState => [
+          ...oldState, 
+          JSON.parse(message.toString())
+        ]);
+        setTimeout(
+          () =>
+        
+        messagesRef.current?.scrollTo({
+          top: messagesRef.current.scrollHeight,
+          behavior: "smooth",
+        }),
+        100,
+      );
+      }
     });
 
     return () => {
@@ -40,28 +63,73 @@ export default function Home() {
   function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
 
-    if(!clientRef.current){
+    if (!clientRef.current || !newMessage || !author) {
       return;
     }
 
-    clientRef.current.publish(TOPIC, JSON.stringify({ message: newMessage }));
+    clientRef.current.publish(
+      TOPIC,
+      JSON.stringify({
+        message: newMessage,
+        author,
+        date: new Date().toISOString(),
+      })
+    );
+    setNewMessage("");
   }
 
-  return <main className="h-screen w-screen" >
-    <input className="h-[5%] w-full"
-      value={newMessage}
-      onChange={(e) => setNewMessage(e.target.value)}
-    />
+  return (
+    <main className="h-screen w-screen">
+      <input className="h-[5%] w-full border-b border-gray-300 p-2"
+        placeholder="Autor"
+        value={author}
+        onChange={(e) => setAuthor(e.target.value)} />
 
-    <div className="h-[90%] w-full"></div>
-
-    <form  className="h-[5%] w-full border-t border-gray-300 flex gap-2" 
-            onSubmit={handleSubmit}
+      <div className="h-[90%] w-full overflow-y-auto flex flex-col" ref={messagesRef}>
+        {messages.map((message, index) => {
+          return (
+            <div key={index}
+              className={`max-w-[70%] wrap-break-word w-fit rounded-xl p-4 mt-2 ${author === message.author ? "self-end bg-green-900/50" : 
+                "bg-gray-900"}`}
             >
-          <input className="h-full flex-1" placeholder="Digite sua mensagem..."/>
-          <button className="h-full cursor-pointer" type="submit">
-            Enviar
-          </button>
-    </form>
-  </main>;
+
+              {author !== message.author && (<p className="text-sm font-bold text-green-900">
+                {message.author}
+              </p>
+              )}
+
+              <p>{message.message}</p>
+
+              <p className="text-xs text-gray-500">
+                {new Date(message.date).toLocaleString("pt-BR", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      <form
+        className="h-[5%] w-full border-t border-gray-300 flex gap-2 p-2"
+        onSubmit={handleSubmit}
+
+      >
+        <input
+          className="h-full flex-1"
+          placeholder="Digite sua mensagem..."
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+        />
+        <button className="h-full cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          type="submit"
+          disabled={!newMessage || !author}>
+          Enviar
+        </button>
+      </form>
+    </main>
+  );
 }
